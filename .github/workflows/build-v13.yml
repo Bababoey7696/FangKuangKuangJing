@@ -85,24 +85,23 @@ jobs:
           cd "$PROJECT"
           gradle --no-daemon --stacktrace :app:assembleRelease
 
-      - name: Collect unsigned APK and signing tools
+      - name: Align and collect APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifact
           APK="$(find "$PROJECT/app/build/outputs/apk/release" -name '*.apk' -type f | head -n1)"
           test -f "$APK"
-          cp "$APK" artifact/FangKuangKuangJing-v1.3-vc6-unsigned.apk
-          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" artifact/
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -p -f 4 "$APK" artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk > artifact/APK-METADATA.txt
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" artifact/
-          cp "$ANDROID_HOME/build-tools/35.0.0/aapt2" artifact/
-          chmod +x artifact/zipalign artifact/aapt2
           sha256sum artifact/* > artifact/SHA256SUMS.txt
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FangKuangKuangJing-v1.3-unsigned-and-tools
+          name: FangKuangKuangJing-v1.3-aligned-unsigned
           path: artifact/
           if-no-files-found: error
           retention-days: 3
