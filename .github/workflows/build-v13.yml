@@ -95,6 +95,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -p -f 4 "$APK" artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk > artifact/APK-METADATA.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump resources artifact/FangKuangKuangJing-v1.3-vc6-aligned-unsigned.apk > artifact/APK-RESOURCES.txt
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" artifact/
           sha256sum artifact/* > artifact/SHA256SUMS.txt
 
