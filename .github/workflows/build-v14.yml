@@ -57,12 +57,13 @@ jobs:
           base64 -d /tmp/v14_code.b64 > /tmp/v14_code.tar.gz
           echo '591b75f6d6a3ce93ff213b0c7b3a2fb6ccd01cd70ab9489a6b7d2119309c2abc  /tmp/v14_code.tar.gz' | sha256sum -c -
           tar -xzf /tmp/v14_code.tar.gz -C "$PROJECT"
+          cp ci-v14/GameBalance.java "$JAVA_DIR/GameBalance.java"
 
           echo 'fc7c3a368a42d1864f864261231c423d8b66d36d84a858ee45b6399dc00215cd  '"$JAVA_DIR/BlockTetrisView.java" | sha256sum -c -
+          echo '32f8703a4e96b04a9b8dcc05390c571b05eba45d652b217e1b2643b176b69360  '"$JAVA_DIR/GameBalance.java" | sha256sum -c -
           grep -q "versionCode 7" "$PROJECT/app/build.gradle"
           grep -q "versionName '1.4'" "$PROJECT/app/build.gradle"
           grep -q "package com.ame.blocktetris" "$JAVA_DIR/BlockTetrisView.java"
-          test -f "$JAVA_DIR/GameBalance.java"
           test -f "$JAVA_DIR/ThemeCatalog.java"
           test -f "$JAVA_DIR/RunMissions.java"
 
