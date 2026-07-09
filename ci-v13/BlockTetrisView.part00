@@ -1,0 +1,384 @@
+package com.ame.blocktetris;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.os.SystemClock;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
+import android.view.View;
+
+import java.util.Random;
+
+/**
+ * 方块矿境 v1.3：纯 Canvas、完全离线的下落方块游戏。
+ * 游戏状态不依赖网络或第三方框架，旧版 SharedPreferences 键会在首次启动时迁移。
+ */
+public class BlockTetrisView extends View {
+    private static final int MAX_COLS = 14;
+    private static final int MAX_ROWS = 24;
+    private static final int QUEUE_SIZE = 3;
+    private static final int MATERIAL_COUNT = 15;
+    private static final int LUCKY_MATERIAL = 14;
+    private static final int SAVE_SCHEMA = 3;
+
+    private static final int SCREEN_MENU = 0;
+    private static final int SCREEN_GAME = 1;
+    private static final int SCREEN_SETTINGS = 2;
+    private static final int SCREEN_SKINS = 3;
+    private static final int SCREEN_TUTORIAL = 4;
+
+    private static final int MODE_CASUAL = 0;
+    private static final int MODE_STANDARD = 1;
+    private static final int MODE_EXTREME = 2;
+
+    private static final int START_ZERO = 0;
+    private static final int START_HIGH = 1;
+    private static final int START_LAST = 2;
+    private static final int START_CURRENT = 3;
+
+    private static final int SENS_LOW = 0;
+    private static final int SENS_STANDARD = 1;
+    private static final int SENS_HIGH = 2;
+
+    private static final int BOARD_STANDARD = 0;
+    private static final int SETTINGS_ROW_COUNT = 21;
+
+    private static final int CONTROL_NONE = 0;
+    private static final int CONTROL_LEFT = 1;
+    private static final int CONTROL_RIGHT = 2;
+    private static final int CONTROL_DOWN = 3;
+    private static final int CONTROL_DROP = 4;
+
+    private static final int CONFIRM_NONE = 0;
+    private static final int CONFIRM_RESTART = 1;
+    private static final int CONFIRM_RESET_SCORES = 2;
+    private static final int CONFIRM_RESET_ALL = 3;
+    private static final int CONFIRM_MENU = 4;
+
+    private static final int SKILL_PICKAXE = 0;
+    private static final int SKILL_FREEZE = 1;
+    private static final int SKILL_REFORGE = 2;
+
+    private static final int[][][] SHAPES = new int[][][] {
+            {
+                    {0,1, 1,1, 2,1, 3,1}, {2,0, 2,1, 2,2, 2,3},
+                    {0,2, 1,2, 2,2, 3,2}, {1,0, 1,1, 1,2, 1,3}
+            },
+            {
+                    {1,0, 2,0, 1,1, 2,1}, {1,0, 2,0, 1,1, 2,1},
+                    {1,0, 2,0, 1,1, 2,1}, {1,0, 2,0, 1,1, 2,1}
+            },
+            {
+                    {1,0, 0,1, 1,1, 2,1}, {1,0, 1,1, 2,1, 1,2},
+                    {0,1, 1,1, 2,1, 1,2}, {1,0, 0,1, 1,1, 1,2}
+            },
+            {
+                    {1,0, 2,0, 0,1, 1,1}, {1,0, 1,1, 2,1, 2,2},
+                    {1,1, 2,1, 0,2, 1,2}, {0,0, 0,1, 1,1, 1,2}
+            },
+            {
+                    {0,0, 1,0, 1,1, 2,1}, {2,0, 1,1, 2,1, 1,2},
+                    {0,1, 1,1, 1,2, 2,2}, {1,0, 0,1, 1,1, 0,2}
+            },
+            {
+                    {0,0, 0,1, 1,1, 2,1}, {1,0, 2,0, 1,1, 1,2},
+                    {0,1, 1,1, 2,1, 2,2}, {1,0, 1,1, 0,2, 1,2}
+            },
+            {
+                    {2,0, 0,1, 1,1, 2,1}, {1,0, 1,1, 1,2, 2,2},
+                    {0,1, 1,1, 2,1, 0,2}, {0,0, 1,0, 1,1, 1,2}
+            }
+    };
+
+    private static final int[][] MATERIAL_COLORS = new int[][] {
+            {0xFF5B8F3A, 0xFF456F2D, 0xFF895C35},
+            {0xFF84898C, 0xFF5B6267, 0xFFAEB2B1},
+            {0xFF364850, 0xFF1F2F37, 0xFF32DADA},
+            {0xFFA06937, 0xFF673D1F, 0xFFCE8F49},
+            {0xFFDAC27D, 0xFFA68D54, 0xFFF1DE9D},
+            {0xFF49464C, 0xFF2A2930, 0xFFDE4C40},
+            {0xFF7C4EA0, 0xFF4D3070, 0xFFD089F2},
+            {0xFFA8893A, 0xFF674F23, 0xFFFFDA52},
+            {0xFFB16840, 0xFF6E3D2B, 0xFF50B897},
+            {0xFF3D5D4B, 0xFF243A30, 0xFF49E786},
+            {0xFF7EBCCF, 0xFF4E849D, 0xFFDEF9FF},
+            {0xFF362B46, 0xFF1B1826, 0xFF7E4DAD},
+            {0xFF4E7B44, 0xFF304D2C, 0xFF99B752},
+            {0xFF5D2F23, 0xFF311C19, 0xFFF67125},
+            {0xFFCCA134, 0xFF603A28, 0xFFFFF67C}
+    };
+
+    private static final String[] MODE_NAMES = {"休闲", "标准", "极限"};
+    private static final String[] MODE_DESCRIPTIONS = {
+            "经典分段曲线慢 2 级，适合熟悉高分节奏",
+            "经典主机分段曲线，每消除 10 行升 1 级",
+            "经典分段曲线快 3 级，适合高速挑战"
+    };
+    private static final String[] START_NAMES = {"从 0 分开始", "从历史最高分开始", "从最近一局开始"};
+    private static final String[] SENS_NAMES = {"低", "标准", "高"};
+    private static final String[] BOARD_NAMES = {"标准 10×20", "加长 10×24", "宽阔 12×20", "探索 12×24", "巨型 14×24"};
+    private static final int[] BOARD_COLS = {10, 10, 12, 12, 14};
+    private static final int[] BOARD_ROWS = {20, 24, 20, 24, 24};
+    private static final String[] MUSIC_NAMES = {"遗迹回响", "晶洞脉冲", "熔岩深层", "天空遗迹"};
+    private static final String[] SKIN_NAMES = {"草原矿洞", "冰晶洞穴", "熔岩遗迹", "深海遗迹", "天空遗迹", "远古核心"};
+    private static final String[] SKIN_UNLOCK = {"默认解锁", "5 枚遗迹碎片", "12 枚遗迹碎片", "20 枚遗迹碎片", "30 枚遗迹碎片", "单局达到 50000 分"};
+    private static final String[] TUTORIAL_TITLES = {"左右移动", "旋转方块", "软降", "快速落地", "HOLD 暂存", "使用技能", "暂停游戏"};
+    private static final String[] TUTORIAL_TEXT = {
+            "按住 ◀ 或 ▶ 可连续移动；首次延迟后才会重复。",
+            "点击旋转键。靠墙时会尝试小幅踢墙，减少卡住。",
+            "按住 ▼ 可连续下降，每下降一格获得 1 分。",
+            "按下后进入准备状态，松手才落地；滑出按钮会取消。",
+            "每个正在下落的方块只能暂存或交换一次。",
+            "消行与连击积攒能量；技能有消耗、冷却与使用限制。",
+            "暂停后所有触控与自动下落都会停止，恢复时不会补掉落。"
+    };
+
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pixelPaint = new Paint();
+    private final Random random = new Random();
+    private final SharedPreferences prefs;
+    private final AudioEngine audio;
+    private final int[][] board = new int[MAX_ROWS][MAX_COLS];
+    private final int[] bag = new int[7];
+    private final int[] nextTypes = new int[QUEUE_SIZE];
+    private final int[] nextMaterials = new int[QUEUE_SIZE];
+
+    private final RectF boardRect = new RectF();
+    private final RectF leftButton = new RectF();
+    private final RectF rotateButton = new RectF();
+    private final RectF rightButton = new RectF();
+    private final RectF downButton = new RectF();
+    private final RectF holdButton = new RectF();
+    private final RectF pauseButton = new RectF();
+    private final RectF dropButton = new RectF();
+    private final RectF settingsButton = new RectF();
+    private final RectF[] skillButtons = {new RectF(), new RectF(), new RectF()};
+    private final RectF menuPrimary = new RectF();
+    private final RectF menuSecondary = new RectF();
+    private final RectF menuThird = new RectF();
+    private final RectF menuFourth = new RectF();
+    private final RectF menuFifth = new RectF();
+    private final RectF overlayButton1 = new RectF();
+    private final RectF overlayButton2 = new RectF();
+    private final RectF overlayButton3 = new RectF();
+    private final RectF overlayButton4 = new RectF();
+    private final RectF confirmYes = new RectF();
+    private final RectF confirmNo = new RectF();
+    private final RectF backButton = new RectF();
+    private final RectF contentClip = new RectF();
+    private final RectF tutorialIconRect = new RectF();
+
+    private int safeLeft;
+    private int safeTop;
+    private int safeRight;
+    private int safeBottom;
+    private float density;
+    private float cell;
+    private float boardLeft;
+    private float boardTop;
+    private float boardRight;
+    private float boardBottom;
+    private float sideLeft;
+    private float sideRight;
+
+    private int screen;
+    private int settingsReturnScreen = SCREEN_MENU;
+    private int tutorialReturnScreen = SCREEN_MENU;
+    private int bagIndex = 7;
+    private int currentType;
+    private int currentMaterial;
+    private int rotation;
+    private int pieceX;
+    private int pieceY;
+    private int heldType = -1;
+    private int heldMaterial;
+    private boolean holdUsed;
+
+    private int score;
+    private int lines;
+    private int level;
+    private int combo;
+    private int maxCombo;
+    private int fourLineCount;
+    private int perfectStreak;
+    private int runFragments;
+    private int energy;
+    private int piecesSpawned;
+    private int nextLuckyAt;
+    private int softDropPoints;
+    private int hardDropPoints;
+    private int lineScore;
+    private int comboScore;
+    private int perfectScore;
+    private int skillScore;
+    private boolean scoreDetailsVisible;
+
+    private int highCasual;
+    private int highStandard;
+    private int highExtreme;
+    private int highLinesCasual;
+    private int highLinesStandard;
+    private int highLinesExtreme;
+    private int lastScoreCasual;
+    private int lastScoreStandard;
+    private int lastScoreExtreme;
+    private int lastLinesCasual;
+    private int lastLinesStandard;
+    private int lastLinesExtreme;
+    private int totalFragments;
+    private int unlockedSkins;
+
+    private int mode;
+    private int startScoreSource;
+    private int runStartScore;
+    private int runStartLines;
+    private int sensitivity;
+    private int selectedBoardPreset;
+    private int activeBoardPreset;
+    private int boardCols = 10;
+    private int boardRows = 20;
+    private int skin;
+    private int soundVolume;
+    private int musicVolume;
+    private int musicTrack;
+    private boolean soundEnabled;
+    private boolean musicEnabled;
+    private boolean vibrationEnabled;
+    private boolean ghostEnabled;
+    private boolean easterAnimations;
+    private boolean colorBlindMode;
+    private boolean gridEnabled;
+    private boolean previewThree;
+    private boolean skillsEnabled;
+
+    private boolean paused;
+    private boolean gameOver;
+    private boolean backgroundPaused;
+    private boolean loopRunning;
+    private boolean hardDropArmed;
+    private boolean shieldUsed;
+    private boolean scoreEggTriggered;
+    private boolean fiftyEggTriggered;
+    private boolean patternEggTriggered;
+    private boolean energyReadyAnnounced;
+
+    private long lastTick;
+    private long freezeUntil;
+    private long slowUntil;
+    private long freezeCooldownUntil;
+    private long reforgeCooldownUntil;
+    private long bannerUntil;
+    private long easterUntil;
+    private String banner = "";
+
+    private int activeControl = CONTROL_NONE;
+    private long repeatAt;
+    private float touchDownX;
+    private float touchDownY;
+    private float lastTouchX;
+    private float lastTouchY;
+    private boolean draggingSettings;
+    private float settingsScroll;
+    private float settingsDownScroll;
+    private int pressedSkill = -1;
+    private long skillPressAt;
+    private boolean skillLongPressShown;
+    private int tutorialPage;
+    private int confirmAction = CONFIRM_NONE;
+    private int titleTapCount;
+    private long titleTapWindow;
+
+    private final Particle[] particles = new Particle[72];
+    private int particleCursor;
+
+    private final Runnable loop = new Runnable() {
+        @Override
+        public void run() {
+            if (!loopRunning) return;
+            long now = SystemClock.uptimeMillis();
+            updateHeldControl(now);
+            updateSkillLongPress(now);
+            updateParticles(now);
+            if (screen == SCREEN_GAME && !paused && !gameOver && !backgroundPaused) {
+                if (now >= freezeUntil && now - lastTick >= dropInterval()) {
+                    stepDown(false);
+                    lastTick = now;
+                }
+            }
+            postInvalidateOnAnimation();
+            postOnAnimation(this);
+        }
+    };
+
+    public BlockTetrisView(Context context) {
+        super(context);
+        density = getResources().getDisplayMetrics().density;
+        paint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        pixelPaint.setAntiAlias(false);
+        setFocusable(true);
+        setHapticFeedbackEnabled(true);
+        for (int i = 0; i < particles.length; i++) particles[i] = new Particle();
+
+        prefs = context.getSharedPreferences("block_tetris", Context.MODE_PRIVATE);
+        migratePreferences();
+        loadPreferences();
+        audio = new AudioEngine(context);
+        applyAudioSettings();
+
+        boolean tutorialSeen = prefs.getBoolean("tutorial_seen", false);
+        screen = tutorialSeen ? SCREEN_MENU : SCREEN_TUTORIAL;
+        tutorialReturnScreen = SCREEN_MENU;
+        tutorialPage = 0;
+        startLoop();
+    }
+
+    private void migratePreferences() {
+        int schema = prefs.getInt("save_schema", 0);
+        if (schema >= SAVE_SCHEMA) return;
+        SharedPreferences.Editor editor = prefs.edit();
+        int oldHigh = prefs.getInt("high_score", 0);
+        if (!prefs.contains("high_score_standard")) editor.putInt("high_score_standard", oldHigh);
+        if (!prefs.contains("sound_enabled_v12")) {
+            editor.putBoolean("sound_enabled_v12", prefs.getBoolean("sound_enabled", true));
+        }
+        if (!prefs.contains("high_lines_casual")) {
+            editor.putInt("high_lines_casual", estimateLinesForLegacyScore(prefs.getInt("high_score_casual", 0)));
+        }
+        if (!prefs.contains("high_lines_standard")) {
+            int standardHigh = prefs.getInt("high_score_standard", oldHigh);
+            editor.putInt("high_lines_standard", estimateLinesForLegacyScore(standardHigh));
+        }
+        if (!prefs.contains("high_lines_extreme")) {
+            editor.putInt("high_lines_extreme", estimateLinesForLegacyScore(prefs.getInt("high_score_extreme", 0)));
+        }
+        if (!prefs.contains("start_score_source")) editor.putInt("start_score_source", START_ZERO);
+        // 保留未知旧键，不执行 clear；迁移标记确保只运行一次。
+        editor.putInt("save_schema", SAVE_SCHEMA);
+        editor.apply();
+    }
+
+    private static int estimateLinesForLegacyScore(int value) {
+        if (value <= 0) return 0;
+        return Math.min(290, Math.max(0, value / 500));
+    }
+
+    private void loadPreferences() {
+        highCasual = prefs.getInt("high_score_casual", 0);
+        highStandard = prefs.getInt("high_score_standard", prefs.getInt("high_score", 0));
+        highExtreme = prefs.getInt("high_score_extreme", 0);
+        highLinesCasual = prefs.getInt("high_lines_casual", estimateLinesForLegacyScore(highCasual));
+        highLinesStandard = prefs.getInt("high_lines_standard", estimateLinesForLegacyScore(highStandard));
+        highLinesExtreme = prefs.getInt("high_lines_extreme", estimateLinesForLegacyScore(highExtreme));
+        lastScoreCasual = prefs.getInt("last_score_casual", 0);
+        lastScoreStandard = prefs.getInt("last_score_standard", 0);
+        lastScoreExtreme = prefs.getInt("last_score_extreme", 0);
+        lastLinesCasual = prefs.getInt("last_lines_casual", 0);
+        lastLinesStandard = prefs.getInt("last_lines_standard", 0);
+        lastLinesExtreme = prefs.getInt("last_lines_extreme", 0);
+       
