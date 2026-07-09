@@ -1,0 +1,122 @@
+name: Build FangKuangKuangJing v1.4
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Install Android SDK 35 tools
+        shell: bash
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Prepare complete v1.4 project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf work
+          mkdir work
+          unzip -q FangKuangKuangJing-Source.zip -d work
+          PROJECT="$(find work -name settings.gradle -type f -printf '%h\n' | head -n1)"
+          test -n "$PROJECT"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+          # Restore the complete v1.3 project foundation from the verified build inputs.
+          base64 -d ci-v13/support.tar.gz.b64 | tar -xzf - -C "$PROJECT"
+          JAVA_DIR="$PROJECT/app/src/main/java/com/ame/blocktetris"
+          mkdir -p "$JAVA_DIR"
+          base64 -d ci-v13/BlockTetrisView.part00.gz.b64 | gzip -dc > "$JAVA_DIR/BlockTetrisView.java"
+          cat ci-v13/BlockTetrisView.part01 ci-v13/BlockTetrisView.part02 >> "$JAVA_DIR/BlockTetrisView.java"
+          base64 -d ci-v13/BlockTetrisView.rest.gz.b64 | gzip -dc >> "$JAVA_DIR/BlockTetrisView.java"
+
+          # Overlay the refactored v1.4 source, balance module, missions, skins and docs.
+          cat ci-v14/v14_code.part0 ci-v14/v14_code.part1 ci-v14/v14_code.part2 ci-v14/v14_code.part3 > /tmp/v14_code.b64
+          base64 -d /tmp/v14_code.b64 > /tmp/v14_code.tar.gz
+          echo '591b75f6d6a3ce93ff213b0c7b3a2fb6ccd01cd70ab9489a6b7d2119309c2abc  /tmp/v14_code.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v14_code.tar.gz -C "$PROJECT"
+
+          echo 'fc7c3a368a42d1864f864261231c423d8b66d36d84a858ee45b6399dc00215cd  '"$JAVA_DIR/BlockTetrisView.java" | sha256sum -c -
+          grep -q "versionCode 7" "$PROJECT/app/build.gradle"
+          grep -q "versionName '1.4'" "$PROJECT/app/build.gradle"
+          grep -q "package com.ame.blocktetris" "$JAVA_DIR/BlockTetrisView.java"
+          test -f "$JAVA_DIR/GameBalance.java"
+          test -f "$JAVA_DIR/ThemeCatalog.java"
+          test -f "$JAVA_DIR/RunMissions.java"
+
+          # The public source archive intentionally excludes large audio assets.
+          # Add compile-time placeholders; original audio is restored locally before signing.
+          python3 - "$PROJECT" <<'PY'
+          import os, sys, wave, struct
+          root = sys.argv[1]
+          raw = os.path.join(root, 'app/src/main/res/raw')
+          music = os.path.join(root, 'app/src/main/assets/music')
+          os.makedirs(raw, exist_ok=True)
+          os.makedirs(music, exist_ok=True)
+          sfx = ['move','rotate','soft_drop','hard_drop','lock','line','multi_line','four_line','skill','ready','egg','pause','game_over','click','hold']
+          tracks = ['bgm_ruins_echo','bgm_crystal_pulse','bgm_lava_depth','bgm_sky_relic']
+          def make_wav(path, seconds):
+              rate = 22050
+              frames = max(1, int(rate * seconds))
+              with wave.open(path, 'wb') as w:
+                  w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+                  w.writeframes(struct.pack('<h', 0) * frames)
+          for name in sfx:
+              if not any(os.path.exists(os.path.join(raw, 'sfx_' + name + ext)) for ext in ('.wav','.ogg','.mp3')):
+                  make_wav(os.path.join(raw, 'sfx_' + name + '.wav'), 0.08)
+          for name in tracks:
+              path = os.path.join(music, name + '.wav')
+              if not os.path.exists(path): make_wav(path, 0.25)
+          PY
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Align and inspect APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          APK="$(find "$PROJECT/app/build/outputs/apk/release" -name '*.apk' -type f | head -n1)"
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -p -f 4 "$APK" artifact/FangKuangKuangJing-v1.4-vc7-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 artifact/FangKuangKuangJing-v1.4-vc7-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging artifact/FangKuangKuangJing-v1.4-vc7-aligned-unsigned.apk > artifact/APK-METADATA.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump resources artifact/FangKuangKuangJing-v1.4-vc7-aligned-unsigned.apk > artifact/APK-RESOURCES.txt
+          grep -q "package: name='com.ame.blocktetris' versionCode='7' versionName='1.4'" artifact/APK-METADATA.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" artifact/
+          sha256sum artifact/* > artifact/SHA256SUMS.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FangKuangKuangJing-v1.4-aligned-unsigned
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 3
