@@ -47,7 +47,8 @@ jobs:
           base64 -d ci-v13/support.tar.gz.b64 | tar -xzf - -C "$PROJECT"
           JAVA_DIR="$PROJECT/app/src/main/java/com/ame/blocktetris"
           mkdir -p "$JAVA_DIR"
-          cat ci-v13/BlockTetrisView.part00 ci-v13/BlockTetrisView.part01 ci-v13/BlockTetrisView.part02 > "$JAVA_DIR/BlockTetrisView.java"
+          base64 -d ci-v13/BlockTetrisView.part00.gz.b64 | gzip -dc > "$JAVA_DIR/BlockTetrisView.java"
+          cat ci-v13/BlockTetrisView.part01 ci-v13/BlockTetrisView.part02 >> "$JAVA_DIR/BlockTetrisView.java"
           base64 -d ci-v13/BlockTetrisView.rest.gz.b64 | gzip -dc >> "$JAVA_DIR/BlockTetrisView.java"
           echo '487f08f09ab25642589ddbc222b4676fa15b53d38ac03ae0e0ebd1ff6d419be6  '"$JAVA_DIR/BlockTetrisView.java" | sha256sum -c -
 
