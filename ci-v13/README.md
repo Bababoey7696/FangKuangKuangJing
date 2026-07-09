@@ -1,0 +1,1 @@
+Temporary isolated build inputs for v1.3. The signing key is not included. This branch is intended only for producing an unsigned APK; final signing is performed locally with the owner's original JKS.
