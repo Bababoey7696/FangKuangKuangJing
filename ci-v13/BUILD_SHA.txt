@@ -1,0 +1,5 @@
+BlockTetrisView.java SHA-256: 487f08f09ab25642589ddbc222b4676fa15b53d38ac03ae0e0ebd1ff6d419be6
+Version: 1.3
+VersionCode: 6
+Package: com.ame.blocktetris
+Signing: not included; local signing only
