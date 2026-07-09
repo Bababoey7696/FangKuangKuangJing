@@ -1,0 +1,440 @@
+totalFragments = prefs.getInt("relic_fragments", 0);
+        unlockedSkins = prefs.getInt("unlocked_skins", 1);
+        mode = clamp(prefs.getInt("game_mode", MODE_STANDARD), 0, 2);
+        startScoreSource = clamp(prefs.getInt("start_score_source", START_ZERO), START_ZERO, START_LAST);
+        sensitivity = clamp(prefs.getInt("touch_sensitivity", SENS_STANDARD), 0, 2);
+        selectedBoardPreset = clamp(prefs.getInt("board_preset", BOARD_STANDARD), 0, BOARD_NAMES.length - 1);
+        activeBoardPreset = selectedBoardPreset;
+        boardCols = BOARD_COLS[activeBoardPreset];
+        boardRows = BOARD_ROWS[activeBoardPreset];
+        skin = clamp(prefs.getInt("skin", 0), 0, 5);
+        soundEnabled = prefs.getBoolean("sound_enabled_v12", true);
+        musicEnabled = prefs.getBoolean("music_enabled", true);
+        soundVolume = clamp(prefs.getInt("sound_volume", 65), 0, 100);
+        musicVolume = clamp(prefs.getInt("music_volume", 22), 0, 100);
+        musicTrack = clamp(prefs.getInt("music_track", 0), 0, MUSIC_NAMES.length - 1);
+        vibrationEnabled = prefs.getBoolean("vibration_enabled", true);
+        ghostEnabled = prefs.getBoolean("ghost_enabled", true);
+        easterAnimations = prefs.getBoolean("easter_animations", true);
+        colorBlindMode = prefs.getBoolean("color_blind", false);
+        gridEnabled = prefs.getBoolean("grid_enabled", true);
+        previewThree = prefs.getBoolean("preview_three", true);
+        skillsEnabled = prefs.getBoolean("skills_enabled", true);
+        updateSkinUnlocks(false);
+        if (!isSkinUnlocked(skin)) skin = 0;
+    }
+
+    private void saveSetting(String key, boolean value) {
+        prefs.edit().putBoolean(key, value).apply();
+    }
+
+    private void saveSetting(String key, int value) {
+        prefs.edit().putInt(key, value).apply();
+    }
+
+    private void applyAudioSettings() {
+        audio.configure(soundEnabled, soundVolume, musicEnabled, musicVolume, musicTrack);
+        boolean gameplayMusic = screen == SCREEN_GAME && !paused && !gameOver && !backgroundPaused;
+        boolean settingsPreview = (screen == SCREEN_SETTINGS || screen == SCREEN_SKINS) && !backgroundPaused;
+        audio.setGameActive(gameplayMusic || settingsPreview);
+    }
+
+    public void setSafeInsets(int left, int top, int right, int bottom) {
+        safeLeft = Math.max(0, left);
+        safeTop = Math.max(0, top);
+        safeRight = Math.max(0, right);
+        safeBottom = Math.max(0, bottom);
+        requestLayout();
+        invalidate();
+    }
+
+    public void onHostPause() {
+        backgroundPaused = true;
+        cancelActiveTouch();
+        if (screen == SCREEN_GAME && !gameOver) paused = true;
+        stopLoop();
+        audio.setGameActive(false);
+        audio.pauseForBackground();
+        invalidate();
+    }
+
+    public void onHostResume() {
+        backgroundPaused = false;
+        lastTick = SystemClock.uptimeMillis();
+        audio.resumeFromBackground();
+        applyAudioSettings();
+        startLoop();
+        invalidate();
+    }
+
+    public void release() {
+        stopLoop();
+        audio.release();
+    }
+
+    private void startLoop() {
+        if (loopRunning) return;
+        loopRunning = true;
+        removeCallbacks(loop);
+        post(loop);
+    }
+
+    private void stopLoop() {
+        loopRunning = false;
+        removeCallbacks(loop);
+    }
+
+    public boolean handleBackPressed() {
+        if (confirmAction != CONFIRM_NONE) {
+            confirmAction = CONFIRM_NONE;
+            invalidate();
+            return true;
+        }
+        if (screen == SCREEN_SKINS) {
+            screen = SCREEN_SETTINGS;
+            applyAudioSettings();
+            invalidate();
+            return true;
+        }
+        if (screen == SCREEN_SETTINGS) {
+            screen = settingsReturnScreen;
+            settingsScroll = 0f;
+            applyAudioSettings();
+            invalidate();
+            return true;
+        }
+        if (screen == SCREEN_TUTORIAL) {
+            finishTutorial();
+            return true;
+        }
+        if (screen == SCREEN_GAME) {
+            if (gameOver) {
+                screen = SCREEN_MENU;
+                applyAudioSettings();
+            } else if (!paused) {
+                setPaused(true);
+            } else {
+                confirmAction = CONFIRM_MENU;
+            }
+            invalidate();
+            return true;
+        }
+        return false;
+    }
+
+    private void startNewGame() {
+        startNewGame(startScoreSource, score, lines);
+    }
+
+    private void startNewGame(int source, int currentScore, int currentLines) {
+        int initialScore = 0;
+        int initialLines = 0;
+        if (source == START_HIGH) {
+            initialScore = getModeHighScore();
+            initialLines = getModeHighLines();
+        } else if (source == START_LAST) {
+            initialScore = getModeLastScore();
+            initialLines = getModeLastLines();
+        } else if (source == START_CURRENT) {
+            initialScore = Math.max(0, currentScore);
+            initialLines = Math.max(0, currentLines);
+        }
+        startNewGameWithProgress(initialScore, initialLines);
+    }
+
+    private void startNewGameWithProgress(int initialScore, int initialLines) {
+        activeBoardPreset = selectedBoardPreset;
+        boardCols = BOARD_COLS[activeBoardPreset];
+        boardRows = BOARD_ROWS[activeBoardPreset];
+        updateLayout(getWidth(), getHeight());
+        for (int r = 0; r < MAX_ROWS; r++) {
+            for (int c = 0; c < MAX_COLS; c++) board[r][c] = 0;
+        }
+        score = Math.max(0, initialScore);
+        lines = Math.max(0, initialLines);
+        level = 1 + lines / 10;
+        runStartScore = score;
+        runStartLines = lines;
+        combo = 0;
+        maxCombo = 0;
+        fourLineCount = 0;
+        perfectStreak = 0;
+        runFragments = 0;
+        energy = 0;
+        piecesSpawned = 0;
+        softDropPoints = 0;
+        hardDropPoints = 0;
+        lineScore = 0;
+        comboScore = 0;
+        perfectScore = 0;
+        skillScore = 0;
+        scoreDetailsVisible = false;
+        heldType = -1;
+        holdUsed = false;
+        shieldUsed = false;
+        scoreEggTriggered = prefs.getBoolean("egg_25000_seen", false) && score >= 25000;
+        fiftyEggTriggered = isSkinUnlocked(5);
+        patternEggTriggered = false;
+        energyReadyAnnounced = false;
+        paused = false;
+        gameOver = false;
+        freezeUntil = 0L;
+        slowUntil = 0L;
+        freezeCooldownUntil = 0L;
+        reforgeCooldownUntil = 0L;
+        easterUntil = 0L;
+        bagIndex = 7;
+        nextLuckyAt = 38 + random.nextInt(35);
+        for (int i = 0; i < QUEUE_SIZE; i++) {
+            nextTypes[i] = takeFromBag();
+            nextMaterials[i] = randomMaterial();
+        }
+        spawnNextPiece(true);
+        lastTick = SystemClock.uptimeMillis();
+        screen = SCREEN_GAME;
+        if (runStartScore > 0) showBanner("续分练习：" + runStartScore + " 分 · 等级 " + level, 1450L);
+        else showBanner("遗迹探险开始！", 1200L);
+        audio.play(AudioEngine.CLICK);
+        applyAudioSettings();
+        invalidate();
+    }
+
+    private void fillBag() {
+        for (int i = 0; i < 7; i++) bag[i] = i;
+        for (int i = 6; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            int tmp = bag[i];
+            bag[i] = bag[j];
+            bag[j] = tmp;
+        }
+        bagIndex = 0;
+    }
+
+    private int takeFromBag() {
+        if (bagIndex >= 7) fillBag();
+        return bag[bagIndex++];
+    }
+
+    private int randomMaterial() {
+        if (piecesSpawned >= nextLuckyAt) {
+            nextLuckyAt += 42 + random.nextInt(45);
+            return LUCKY_MATERIAL;
+        }
+        int roll = random.nextInt(1000);
+        if (roll < 12) return LUCKY_MATERIAL;
+        int weighted = random.nextInt(100);
+        if (weighted < 14) return 0;
+        if (weighted < 27) return 1;
+        if (weighted < 38) return 3;
+        if (weighted < 48) return 4;
+        if (weighted < 57) return 12;
+        if (weighted < 65) return 8;
+        if (weighted < 72) return 10;
+        if (weighted < 79) return 5;
+        if (weighted < 85) return 7;
+        if (weighted < 90) return 9;
+        if (weighted < 94) return 2;
+        if (weighted < 97) return 6;
+        if (weighted < 99) return 11;
+        return 13;
+    }
+
+    private void spawnNextPiece(boolean resetHold) {
+        currentType = nextTypes[0];
+        currentMaterial = nextMaterials[0];
+        for (int i = 0; i < QUEUE_SIZE - 1; i++) {
+            nextTypes[i] = nextTypes[i + 1];
+            nextMaterials[i] = nextMaterials[i + 1];
+        }
+        nextTypes[QUEUE_SIZE - 1] = takeFromBag();
+        piecesSpawned++;
+        nextMaterials[QUEUE_SIZE - 1] = randomMaterial();
+        rotation = 0;
+        pieceX = spawnX();
+        pieceY = -1;
+        if (resetHold) holdUsed = false;
+        if (collides(pieceX, pieceY, rotation)) finishGameOrShield();
+    }
+
+    private long dropInterval() {
+        // 采用 1989 年经典主机版的离散重力表：每个数值表示下降一格所需帧数。
+        // 标准模式严格对应经典等级；休闲模式慢 2 级，极限模式快 3 级。
+        int classicLevel = Math.max(0, level - 1);
+        if (mode == MODE_CASUAL) classicLevel = Math.max(0, classicLevel - 2);
+        else if (mode == MODE_EXTREME) classicLevel += 3;
+        int frames = classicGravityFrames(classicLevel);
+        long interval = Math.max(16L, Math.round(frames * 1000.0 / 60.0988));
+        if (SystemClock.uptimeMillis() < slowUntil) interval = Math.round(interval * 1.55f);
+        return interval;
+    }
+
+    private int classicGravityFrames(int classicLevel) {
+        if (classicLevel <= 0) return 48;
+        if (classicLevel == 1) return 43;
+        if (classicLevel == 2) return 38;
+        if (classicLevel == 3) return 33;
+        if (classicLevel == 4) return 28;
+        if (classicLevel == 5) return 23;
+        if (classicLevel == 6) return 18;
+        if (classicLevel == 7) return 13;
+        if (classicLevel == 8) return 8;
+        if (classicLevel == 9) return 6;
+        if (classicLevel <= 12) return 5;
+        if (classicLevel <= 15) return 4;
+        if (classicLevel <= 18) return 3;
+        if (classicLevel <= 28) return 2;
+        return 1;
+    }
+
+    private boolean collides(int x, int y, int rot) {
+        int[] shape = SHAPES[currentType][rot];
+        for (int i = 0; i < 8; i += 2) {
+            int bx = x + shape[i];
+            int by = y + shape[i + 1];
+            if (bx < 0 || bx >= boardCols || by >= boardRows) return true;
+            if (by >= 0 && board[by][bx] != 0) return true;
+        }
+        return false;
+    }
+
+    private boolean canPlaceType(int type, int x, int y, int rot) {
+        int old = currentType;
+        currentType = type;
+        boolean result = !collides(x, y, rot);
+        currentType = old;
+        return result;
+    }
+
+    private void move(int dx, boolean repeated) {
+        if (!canOperate()) return;
+        if (!collides(pieceX + dx, pieceY, rotation)) {
+            pieceX += dx;
+            audio.play(AudioEngine.MOVE, repeated ? 0.48f : 0.65f);
+        }
+    }
+
+    private void rotatePiece() {
+        if (!canOperate()) return;
+        int nextRotation = (rotation + 1) % 4;
+        int[] kicks = {0, -1, 1, -2, 2};
+        for (int kick : kicks) {
+            if (!collides(pieceX + kick, pieceY, nextRotation)) {
+                pieceX += kick;
+                rotation = nextRotation;
+                audio.play(AudioEngine.ROTATE);
+                lightHaptic();
+                return;
+            }
+        }
+        showBanner("这里无法旋转", 520L);
+    }
+
+    private void stepDown(boolean manual) {
+        if (!canOperate()) return;
+        if (!collides(pieceX, pieceY + 1, rotation)) {
+            pieceY++;
+            if (manual) {
+                score++;
+                softDropPoints++;
+                audio.play(AudioEngine.SOFT_DROP, 0.38f);
+            }
+        } else {
+            lockPiece();
+        }
+    }
+
+    private void hardDrop() {
+        if (!canOperate()) return;
+        int distance = 0;
+        while (!collides(pieceX, pieceY + 1, rotation)) {
+            pieceY++;
+            distance++;
+        }
+        int points = distance * 2;
+        score += points;
+        hardDropPoints += points;
+        strongHaptic();
+        audio.play(AudioEngine.HARD_DROP);
+        lockPiece();
+    }
+
+    private void holdPiece() {
+        if (!canOperate()) return;
+        if (holdUsed) {
+            showBanner("该方块已经暂存过", 750L);
+            audio.play(AudioEngine.CLICK, 0.45f);
+            return;
+        }
+        int oldType = currentType;
+        int oldMaterial = currentMaterial;
+        if (heldType < 0) {
+            heldType = oldType;
+            heldMaterial = oldMaterial;
+            spawnNextPiece(false);
+        } else {
+            int swapType = heldType;
+            int swapMaterial = heldMaterial;
+            heldType = oldType;
+            heldMaterial = oldMaterial;
+            currentType = swapType;
+            currentMaterial = swapMaterial;
+            rotation = 0;
+            pieceX = spawnX();
+            pieceY = -1;
+            if (!findSafeCurrentPlacement()) {
+                currentType = oldType;
+                currentMaterial = oldMaterial;
+                heldType = swapType;
+                heldMaterial = swapMaterial;
+                showBanner("暂存交换空间不足", 900L);
+                return;
+            }
+        }
+        holdUsed = true;
+        lastTick = SystemClock.uptimeMillis();
+        audio.play(AudioEngine.HOLD);
+        lightHaptic();
+        showBanner("方块已暂存", 620L);
+    }
+
+    private boolean findSafeCurrentPlacement() {
+        int[] xOffsets = {0, -1, 1, -2, 2};
+        int[] yOffsets = {-1, -2, 0};
+        for (int yOff : yOffsets) {
+            for (int xOff : xOffsets) {
+                if (!collides(spawnX() + xOff, yOff, 0)) {
+                    pieceX = spawnX() + xOff;
+                    pieceY = yOff;
+                    rotation = 0;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void lockPiece() {
+        int[] shape = SHAPES[currentType][rotation];
+        boolean aboveTop = false;
+        boolean lucky = currentMaterial == LUCKY_MATERIAL;
+        for (int i = 0; i < 8; i += 2) {
+            int bx = pieceX + shape[i];
+            int by = pieceY + shape[i + 1];
+            if (by < 0) aboveTop = true;
+            else if (by < boardRows && bx >= 0 && bx < boardCols) board[by][bx] = packCell(currentMaterial, currentType);
+        }
+        audio.play(AudioEngine.LOCK, 0.72f);
+        if (aboveTop) {
+            finishGameOrShield();
+            return;
+        }
+        checkPatternEgg();
+        int cleared = clearLines(false);
+        if (cleared == 0) {
+            combo = 0;
+            perfectStreak = 0;
+        }
+        if (lucky && !gameOver) triggerLuckyEvent(cleared);
+        checkScoreEasterEggs();
+        if (!gameOver) spawnNextPiece(true);
+        lastTick = SystemClock.upti
