@@ -25,19 +25,23 @@ jobs:
         run: |
           set -euo pipefail
           if [ -d .build/v142.text ]; then
-            cat .build/v142.text/part_00.patch .build/v142.text/part_01.patch .build/v142.text/part_02.patch > /tmp/v142.patch
-            wc -c /tmp/v142.patch
-            if ! patch --dry-run -p1 < /tmp/v142.patch > /tmp/patch.log 2>&1; then
-              cp /tmp/patch.log .build/v142_patch_error.txt
-              git config user.name 'github-actions[bot]'
-              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-              git add .build/v142_patch_error.txt
-              git commit -m 'Record v1.4.2 patch diagnostic' || true
-              git push origin HEAD:fix/crisp-audio-v1.4.2 || true
-              cat /tmp/patch.log
-              exit 1
-            fi
-            patch -p1 < /tmp/v142.patch
+            cat .build/v142.text/part_00.patch .build/v142.text/part_01.patch .build/v142.text/part_02.patch > /tmp/v142-full.patch
+            awk '/^diff -ruN .*app\/build.gradle/{copy=1} copy{print}' /tmp/v142-full.patch > /tmp/v142-code.patch
+            patch --dry-run -p1 < /tmp/v142-code.patch
+            patch -p1 < /tmp/v142-code.patch
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('README.md')
+          text = path.read_text(encoding='utf-8')
+          text = re.sub(r'^# 方块矿境 Block Mine v.*$', '# 方块矿境 Block Mine v1.4.2', text, count=1, flags=re.M)
+          text = re.sub(r'^- versionName：.*$', '- versionName：`1.4.2`', text, count=1, flags=re.M)
+          text = re.sub(r'^- versionCode：.*$', '- versionCode：`9`', text, count=1, flags=re.M)
+          note = 'v1.4.2 新增可切换的 v1.2 经典触控与 v1.4.1 稳健触控；保留原有四首背景音乐，在播放端削弱高频底噪，并修复快速落地与锁定音叠加。'
+          if note not in text:
+              text = text.rstrip() + '\n\n' + note + '\n'
+          path.write_text(text, encoding='utf-8')
+          PY
           fi
           grep -q 'versionCode 9' app/build.gradle
           grep -q "versionName '1.4.2'" app/build.gradle
