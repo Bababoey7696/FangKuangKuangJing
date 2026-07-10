@@ -1,0 +1,74 @@
+name: Publish v1.4 source recovery
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run source preparation steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import yaml
+
+          path = '.github/workflows/publish-clean-source-v14.yml'
+          with open(path, encoding='utf-8') as f:
+              data = yaml.safe_load(f)
+          steps = data['jobs']['publish-source']['steps']
+          wanted = {
+              'Reconstruct verified v1.4 project',
+              'Add reproducible original-style audio generator',
+              'Add maintenance docs and CI',
+          }
+          env = os.environ.copy()
+          env_file = env['GITHUB_ENV']
+          for step in steps:
+              if step.get('name') not in wanted:
+                  continue
+              subprocess.run(step['run'], shell=True, executable='/bin/bash', check=True, env=env)
+              if os.path.exists(env_file):
+                  with open(env_file, encoding='utf-8') as f:
+                      for line in f:
+                          line = line.rstrip('\n')
+                          if '=' in line:
+                              key, value = line.split('=', 1)
+                              env[key] = value
+          project = env.get('PROJECT')
+          if not project or not os.path.isfile(os.path.join(project, 'settings.gradle')):
+              raise SystemExit('PROJECT was not reconstructed')
+          with open(env_file, 'a', encoding='utf-8') as f:
+              f.write('PROJECT=' + project + '\n')
+          PY
+
+      - name: Push clean source branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          rm -rf .git .gradle .idea app/build build
+          rm -f local.properties
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B release-v1.4-source
+          git add .
+          git commit -m "Publish 方块矿境 v1.4 clean Android Studio source"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin release-v1.4-source
