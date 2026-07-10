@@ -25,7 +25,7 @@ public class BlockTetrisView extends View {
     private static final int QUEUE_SIZE = 3;
     private static final int MATERIAL_COUNT = 15;
     private static final int LUCKY_MATERIAL = 14;
-    private static final int SAVE_SCHEMA = 4;
+    private static final int SAVE_SCHEMA = 5;
 
     private static final int SCREEN_MENU = 0;
     private static final int SCREEN_GAME = 1;
@@ -46,8 +46,11 @@ public class BlockTetrisView extends View {
     private static final int SENS_STANDARD = 1;
     private static final int SENS_HIGH = 2;
 
+    private static final int TOUCH_CLASSIC_V12 = 0;
+    private static final int TOUCH_STABLE_V141 = 1;
+
     private static final int BOARD_STANDARD = 0;
-    private static final int SETTINGS_ROW_COUNT = 23;
+    private static final int SETTINGS_ROW_COUNT = 24;
 
     private static final int CONTROL_NONE = 0;
     private static final int CONTROL_LEFT = 1;
@@ -123,6 +126,7 @@ public class BlockTetrisView extends View {
             "高速挑战曲线：更快，但仍保留触屏落地缓冲"
     };
     private static final String[] START_NAMES = {"从 0 分开始", "从历史最高分开始", "从最近一局开始"};
+    private static final String[] TOUCH_PROFILE_NAMES = {"经典 v1.2", "稳健 v1.4.1"};
     private static final String[] SENS_NAMES = {"低", "标准", "高"};
     private static final String[] BOARD_NAMES = {"标准 10×20", "加长 10×24", "宽阔 12×20", "探索 12×24", "巨型 14×24"};
     private static final int[] BOARD_COLS = {10, 10, 12, 12, 14};
@@ -132,7 +136,7 @@ public class BlockTetrisView extends View {
     private static final String[] SKIN_UNLOCK = ThemeCatalog.UNLOCK_TEXT;
     private static final String[] TUTORIAL_TITLES = {"左右移动", "旋转方块", "软降", "快速落地", "落地缓冲", "HOLD 暂存", "使用技能", "本局任务", "暂停游戏"};
     private static final String[] TUTORIAL_TEXT = {
-            "按住 ◀ 或 ▶ 可连续移动；首次延迟后才会重复。",
+            "按住 ◀ 或 ▶ 可连续移动；设置中可切换 v1.2 经典或 v1.4.1 稳健触控。",
             "点击旋转键。靠墙时会尝试小幅踢墙，减少卡住。",
             "按住 ▼ 可连续下降，每下降一格获得 1 分。",
             "按下后进入准备状态，松手才落地；滑出按钮会取消。",
@@ -244,6 +248,7 @@ public class BlockTetrisView extends View {
     private int startScoreSource;
     private int runStartScore;
     private int runStartLines;
+    private int touchProfile;
     private int sensitivity;
     private int selectedBoardPreset;
     private int activeBoardPreset;
@@ -372,6 +377,7 @@ public class BlockTetrisView extends View {
         if (!prefs.contains("start_score_source")) editor.putInt("start_score_source", START_ZERO);
         if (!prefs.contains("skill_loadout")) editor.putInt("skill_loadout", 0);
         if (!prefs.contains("completed_missions")) editor.putInt("completed_missions", 0);
+        if (!prefs.contains("touch_profile")) editor.putInt("touch_profile", TOUCH_STABLE_V141);
         // 保留未知旧键，不执行 clear；迁移标记确保只运行一次。
         editor.putInt("save_schema", SAVE_SCHEMA);
         editor.apply();
@@ -400,6 +406,7 @@ public class BlockTetrisView extends View {
         completedMissionCount = prefs.getInt("completed_missions", 0);
         mode = clamp(prefs.getInt("game_mode", MODE_STANDARD), 0, 2);
         startScoreSource = clamp(prefs.getInt("start_score_source", START_ZERO), START_ZERO, START_LAST);
+        touchProfile = clamp(prefs.getInt("touch_profile", TOUCH_STABLE_V141), TOUCH_CLASSIC_V12, TOUCH_STABLE_V141);
         sensitivity = clamp(prefs.getInt("touch_sensitivity", SENS_STANDARD), 0, 2);
         selectedBoardPreset = clamp(prefs.getInt("board_preset", BOARD_STANDARD), 0, BOARD_NAMES.length - 1);
         activeBoardPreset = selectedBoardPreset;
@@ -2039,6 +2046,7 @@ public class BlockTetrisView extends View {
         drawSettingRow(canvas,y,rowH,"音乐曲目",MUSIC_NAMES[musicTrack]); y+=rowH;
         drawSettingRow(canvas,y,rowH,"音乐音量",musicVolume+"%"); y+=rowH;
         drawSettingRow(canvas,y,rowH,"轻微震动",vibrationEnabled?"开":"关"); y+=rowH;
+        drawSettingRow(canvas,y,rowH,"触控方案",TOUCH_PROFILE_NAMES[touchProfile]); y+=rowH;
         drawSettingRow(canvas,y,rowH,"触控灵敏度",SENS_NAMES[sensitivity]); y+=rowH;
         drawSettingRow(canvas,y,rowH,"幽灵落点",ghostEnabled?"显示":"隐藏"); y+=rowH;
         drawSettingRow(canvas,y,rowH,"彩蛋动画",easterAnimations?"开":"关"); y+=rowH;
@@ -2278,32 +2286,36 @@ public class BlockTetrisView extends View {
             case 9:
                 vibrationEnabled=!vibrationEnabled;saveSetting("vibration_enabled",vibrationEnabled);break;
             case 10:
-                sensitivity=(sensitivity+1)%3;saveSetting("touch_sensitivity",sensitivity);break;
+                touchProfile=(touchProfile+1)%TOUCH_PROFILE_NAMES.length;
+                saveSetting("touch_profile",touchProfile);
+                showBanner("触控方案："+TOUCH_PROFILE_NAMES[touchProfile],1000L);break;
             case 11:
-                ghostEnabled=!ghostEnabled;saveSetting("ghost_enabled",ghostEnabled);break;
+                sensitivity=(sensitivity+1)%3;saveSetting("touch_sensitivity",sensitivity);break;
             case 12:
-                easterAnimations=!easterAnimations;saveSetting("easter_animations",easterAnimations);break;
+                ghostEnabled=!ghostEnabled;saveSetting("ghost_enabled",ghostEnabled);break;
             case 13:
-                screen=SCREEN_SKINS;break;
+                easterAnimations=!easterAnimations;saveSetting("easter_animations",easterAnimations);break;
             case 14:
-                colorBlindMode=!colorBlindMode;saveSetting("color_blind",colorBlindMode);break;
+                screen=SCREEN_SKINS;break;
             case 15:
-                gridEnabled=!gridEnabled;saveSetting("grid_enabled",gridEnabled);break;
+                colorBlindMode=!colorBlindMode;saveSetting("color_blind",colorBlindMode);break;
             case 16:
-                previewThree=!previewThree;saveSetting("preview_three",previewThree);break;
+                gridEnabled=!gridEnabled;saveSetting("grid_enabled",gridEnabled);break;
             case 17:
+                previewThree=!previewThree;saveSetting("preview_three",previewThree);break;
+            case 18:
                 skillLoadout=(skillLoadout+1)%GameBalance.SKILL_LOADOUTS.length;
                 saveSetting("skill_loadout",skillLoadout);
                 showBanner("技能配置："+GameBalance.LOADOUT_NAMES[skillLoadout],1000L);break;
-            case 18:
-                showBanner("被动技能："+passiveSkillSummary(),1400L);break;
             case 19:
-                skillsEnabled=!skillsEnabled;saveSetting("skills_enabled",skillsEnabled);break;
+                showBanner("被动技能："+passiveSkillSummary(),1400L);break;
             case 20:
-                tutorialPage=0;tutorialReturnScreen=SCREEN_SETTINGS;screen=SCREEN_TUTORIAL;break;
+                skillsEnabled=!skillsEnabled;saveSetting("skills_enabled",skillsEnabled);break;
             case 21:
-                confirmAction=CONFIRM_RESET_SCORES;break;
+                tutorialPage=0;tutorialReturnScreen=SCREEN_SETTINGS;screen=SCREEN_TUTORIAL;break;
             case 22:
+                confirmAction=CONFIRM_RESET_SCORES;break;
+            case 23:
                 confirmAction=CONFIRM_RESET_ALL;break;
             default:break;
         }
@@ -2524,15 +2536,28 @@ public class BlockTetrisView extends View {
     private void beginRepeat(int control){
         activeControl=control;
         long now=SystemClock.uptimeMillis();
-        repeatAt=now+repeatDelay();
+        repeatAt=now+repeatDelay(control);
     }
 
-    private long repeatDelay(){
-        return sensitivity==SENS_LOW?235L:(sensitivity==SENS_HIGH?125L:175L);
+    /**
+     * 经典方案完整还原 v1.2 的左右连移参数；稳健方案延后首次连移，
+     * 降低短按误走两格的概率。向下软降始终使用原来的快速参数。
+     */
+    private long repeatDelay(int control){
+        if(control==CONTROL_DOWN){
+            return sensitivity==SENS_LOW?235L:(sensitivity==SENS_HIGH?125L:175L);
+        }
+        if(touchProfile==TOUCH_CLASSIC_V12){
+            return sensitivity==SENS_LOW?235L:(sensitivity==SENS_HIGH?125L:175L);
+        }
+        return sensitivity==SENS_LOW?380L:(sensitivity==SENS_HIGH?260L:320L);
     }
 
-    private long repeatInterval(){
-        return sensitivity==SENS_LOW?112L:(sensitivity==SENS_HIGH?54L:80L);
+    private long repeatInterval(int control){
+        if(control==CONTROL_DOWN || touchProfile==TOUCH_CLASSIC_V12){
+            return sensitivity==SENS_LOW?112L:(sensitivity==SENS_HIGH?54L:80L);
+        }
+        return sensitivity==SENS_LOW?120L:(sensitivity==SENS_HIGH?72L:94L);
     }
 
     private void updateHeldControl(long now){
@@ -2541,7 +2566,7 @@ public class BlockTetrisView extends View {
         if(activeControl==CONTROL_LEFT)move(-1,true);
         else if(activeControl==CONTROL_RIGHT)move(1,true);
         else if(activeControl==CONTROL_DOWN)stepDown(true);
-        repeatAt=now+repeatInterval();
+        repeatAt=now+repeatInterval(activeControl);
     }
 
     private void updateSkillLongPress(long now){

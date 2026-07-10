@@ -19,7 +19,7 @@ public class MainActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        gameView = new StableTouchBlockTetrisView(this);
+        gameView = new BlockTetrisView(this);
         refreshSystemUi();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             gameView.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {

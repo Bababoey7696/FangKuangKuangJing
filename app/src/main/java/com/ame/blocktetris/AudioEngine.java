@@ -5,6 +5,7 @@ import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.media.SoundPool;
+import android.media.audiofx.Equalizer;
 import android.os.SystemClock;
 
 import java.io.IOException;
@@ -38,6 +39,7 @@ final class AudioEngine {
             "music/bgm_sky_relic.wav"
     };
     private MediaPlayer music;
+    private Equalizer musicEqualizer;
     private int musicTrack = -1;
     private boolean soundEnabled = true;
     private boolean musicEnabled = true;
@@ -45,6 +47,7 @@ final class AudioEngine {
     private float soundVolume = 0.65f;
     private float musicVolume = 0.22f;
     private long lastMoveSound;
+    private long lastHardDropSound;
     private boolean released;
 
     AudioEngine(Context context) {
@@ -57,7 +60,7 @@ final class AudioEngine {
         sounds.put(MOVE, pool.load(context, R.raw.sfx_move, 1));
         sounds.put(ROTATE, pool.load(context, R.raw.sfx_rotate, 1));
         sounds.put(SOFT_DROP, pool.load(context, R.raw.sfx_soft_drop, 1));
-        sounds.put(HARD_DROP, pool.load(context, R.raw.sfx_hard_drop, 1));
+        sounds.put(HARD_DROP, pool.load(context, R.raw.sfx_rotate, 1));
         sounds.put(LOCK, pool.load(context, R.raw.sfx_lock, 1));
         sounds.put(LINE, pool.load(context, R.raw.sfx_line, 1));
         sounds.put(MULTI_LINE, pool.load(context, R.raw.sfx_multi_line, 1));
@@ -85,6 +88,7 @@ final class AudioEngine {
 
     private void loadMusicTrack(int track) {
         if (released) return;
+        releaseMusicEqualizer();
         if (music != null) {
             try {
                 if (music.isPlaying()) music.stop();
@@ -106,6 +110,7 @@ final class AudioEngine {
             music.setLooping(true);
             music.setVolume(musicVolume, musicVolume);
             music.prepare();
+            configureMusicEqualizer();
         } catch (IOException | RuntimeException e) {
             if (music != null) {
                 try { music.release(); } catch (RuntimeException ignored) { }
@@ -116,6 +121,35 @@ final class AudioEngine {
                 try { afd.close(); } catch (IOException ignored) { }
             }
         }
+    }
+
+    private void configureMusicEqualizer() {
+        releaseMusicEqualizer();
+        if (music == null) return;
+        try {
+            Equalizer equalizer = new Equalizer(0, music.getAudioSessionId());
+            short bandCount = equalizer.getNumberOfBands();
+            short[] range = equalizer.getBandLevelRange();
+            for (short band = 0; band < bandCount; band++) {
+                int centerHz = equalizer.getCenterFreq(band) / 1000;
+                int target = 0;
+                if (centerHz >= 7000) target = -500;
+                else if (centerHz >= 1800 && centerHz <= 5000) target = 100;
+                target = Math.max(range[0], Math.min(range[1], target));
+                equalizer.setBandLevel(band, (short) target);
+            }
+            equalizer.setEnabled(true);
+            musicEqualizer = equalizer;
+        } catch (RuntimeException ignored) {
+            // 部分设备不提供系统均衡器；播放仍按原始音乐正常继续。
+            musicEqualizer = null;
+        }
+    }
+
+    private void releaseMusicEqualizer() {
+        if (musicEqualizer == null) return;
+        try { musicEqualizer.release(); } catch (RuntimeException ignored) { }
+        musicEqualizer = null;
     }
 
     void setGameActive(boolean active) {
@@ -129,15 +163,20 @@ final class AudioEngine {
 
     void play(int sound, float relativeVolume) {
         if (released || !soundEnabled || soundVolume <= 0f) return;
+        long now = SystemClock.uptimeMillis();
         if (sound == MOVE || sound == SOFT_DROP) {
-            long now = SystemClock.uptimeMillis();
             if (now - lastMoveSound < 58L) return;
             lastMoveSound = now;
         }
+        // 快速落地后 lockPiece 会立即请求普通锁定音。抑制这次叠音，
+        // 避免两个低频尾音重叠成闷重、拖沓的听感。
+        if (sound == LOCK && now - lastHardDropSound < 140L) return;
+        if (sound == HARD_DROP) lastHardDropSound = now;
         Integer id = sounds.get(sound);
         if (id == null) return;
         float volume = soundVolume * Math.max(0f, Math.min(1f, relativeVolume));
-        pool.play(id, volume, volume, 1, 0, 1f);
+        float rate = sound == HARD_DROP ? 1.18f : 1f;
+        pool.play(id, volume, volume, 1, 0, rate);
     }
 
     void pauseForBackground() {
@@ -166,6 +205,7 @@ final class AudioEngine {
         if (released) return;
         released = true;
         pool.release();
+        releaseMusicEqualizer();
         if (music != null) {
             try { music.release(); } catch (RuntimeException ignored) { }
             music = null;
