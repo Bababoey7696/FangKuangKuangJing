@@ -55,20 +55,23 @@ jobs:
               f.write('PROJECT=' + project + '\n')
           PY
 
-      - name: Push clean source branch
+      - name: Publish source with main history
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cd "$PROJECT"
-          rm -rf .git .gradle .idea app/build build .github/workflows
-          rm -f local.properties
-          git init
+          rm -rf "$PROJECT/.git" "$PROJECT/.gradle" "$PROJECT/.idea" "$PROJECT/app/build" "$PROJECT/build" "$PROJECT/.github/workflows"
+          rm -f "$PROJECT/local.properties"
+
+          TARGET="$RUNNER_TEMP/release-repo"
+          git clone --depth=1 --branch main "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$TARGET"
+          cd "$TARGET"
+          git checkout -B release-v1.4-source
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$GITHUB_WORKSPACE/$PROJECT/." .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B source-v1.4-clean
-          git add .
+          git add -A
           git commit -m "Publish 方块矿境 v1.4 clean Android Studio source"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin HEAD:refs/heads/source-v1.4-clean
+          git push --force origin release-v1.4-source
