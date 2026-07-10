@@ -17,6 +17,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Apply verified v1.4.2 overlay for this PR
+        if: github.head_ref == 'fix/crisp-audio-v1.4.2'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'b30dfacecd9fbf45a601fcd29826faaeaa86fad6d673b10da7161d06d64387ba  .build/v142_overlay.tar.gz' | sha256sum -c -
+          tar -xzf .build/v142_overlay.tar.gz -C .
+          rm -f app/src/main/java/com/ame/blocktetris/StableTouchBlockTetrisView.java
+          grep -q 'versionCode 9' app/build.gradle
+          grep -q "versionName '1.4.2'" app/build.gradle
+          grep -q '经典 v1.2' app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
+          grep -q 'music/bgm_classic_v12.ogg' app/src/main/java/com/ame/blocktetris/AudioEngine.java
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -57,7 +70,7 @@ jobs:
       - name: Upload unsigned build outputs
         uses: actions/upload-artifact@v4
         with:
-          name: block-mine-unsigned-apks
+          name: block-mine-v1.4.2-unsigned-apks
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 7
