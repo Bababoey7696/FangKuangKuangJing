@@ -23,6 +23,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Release keeps binaries outside the source history.
           if gh release view v1.4 >/dev/null 2>&1; then
             gh release edit v1.4 --title '方块矿境 v1.4 手机平衡版' --notes-file releases/v1.4/README.md --latest
             gh release upload v1.4 releases/v1.4/SHA256SUMS.txt releases/v1.4/VERIFICATION.md --clobber
