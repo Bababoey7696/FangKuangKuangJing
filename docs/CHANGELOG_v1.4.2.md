@@ -19,3 +19,4 @@
 - versionName：1.4.2
 - versionCode：9
 - 包名与 SharedPreferences 存档键保持兼容。
+- 清理临时构建材料后，使用仓库中的正式源码重新执行 Debug 与 unsigned Release 构建检查。
