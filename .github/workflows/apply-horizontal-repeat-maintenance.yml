@@ -1,18 +1,19 @@
 name: Apply horizontal repeat maintenance fix
 
 on:
-  push:
+  pull_request_target:
     branches: [ main ]
-    paths: [ '.github/workflows/apply-horizontal-repeat-maintenance.yml' ]
+    types: [ opened, synchronize, reopened ]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.event.pull_request.head.ref == 'fix/horizontal-repeat-guard'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout fix branch
+      - name: Checkout trusted fix branch
         uses: actions/checkout@v4
         with:
           ref: fix/horizontal-repeat-guard
