@@ -26,7 +26,8 @@ jobs:
           set -euo pipefail
           if [ -d .build/v142.text ]; then
             cat .build/v142.text/part_00.patch .build/v142.text/part_01.patch .build/v142.text/part_02.patch > /tmp/v142.patch
-            echo '1be85fc37f01d11fe702572d18f188db5117f9a26ab65240afd447614699e306  /tmp/v142.patch' | sha256sum -c -
+            wc -c /tmp/v142.patch
+            patch --dry-run -p1 < /tmp/v142.patch
             patch -p1 < /tmp/v142.patch
           fi
           grep -q 'versionCode 9' app/build.gradle
