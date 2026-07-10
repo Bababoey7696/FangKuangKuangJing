@@ -1,0 +1,9 @@
+checking file README.md
+Hunk #1 FAILED at 1.
+1 out of 1 hunk FAILED
+checking file app/build.gradle
+checking file app/src/main/java/com/ame/blocktetris/AudioEngine.java
+checking file app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
+checking file app/src/main/java/com/ame/blocktetris/MainActivity.java
+checking file app/src/main/java/com/ame/blocktetris/StableTouchBlockTetrisView.java
+checking file docs/CHANGELOG_v1.4.2.md
