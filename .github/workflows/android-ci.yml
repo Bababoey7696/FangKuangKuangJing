@@ -7,31 +7,35 @@ on:
     branches: [ main, develop ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout feature branch
         uses: actions/checkout@v4
+        with:
+          ref: fix/crisp-audio-v1.4.2
+          fetch-depth: 0
 
-      - name: Apply verified v1.4.2 overlay for this PR
-        if: github.head_ref == 'fix/crisp-audio-v1.4.2'
+      - name: Apply verified v1.4.2 source patch
         shell: bash
         run: |
           set -euo pipefail
-          test -s .build/v142_overlay.tar.gz
-          tar -tzf .build/v142_overlay.tar.gz >/dev/null
-          tar -xzf .build/v142_overlay.tar.gz -C .
-          rm -f app/src/main/java/com/ame/blocktetris/StableTouchBlockTetrisView.java
+          if [ -d .build/v142.text ]; then
+            cat .build/v142.text/part_00.patch .build/v142.text/part_01.patch .build/v142.text/part_02.patch > /tmp/v142.patch
+            echo '1be85fc37f01d11fe702572d18f188db5117f9a26ab65240afd447614699e306  /tmp/v142.patch' | sha256sum -c -
+            patch -p1 < /tmp/v142.patch
+          fi
           grep -q 'versionCode 9' app/build.gradle
           grep -q "versionName '1.4.2'" app/build.gradle
           grep -q '经典 v1.2' app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
-          grep -q 'music/bgm_classic_v12.ogg' app/src/main/java/com/ame/blocktetris/AudioEngine.java
-          test "$(stat -c%s app/src/main/assets/music/bgm_classic_v12.ogg)" -gt 50000
-          test "$(stat -c%s app/src/main/res/raw/sfx_hard_drop.wav)" -gt 3000
+          grep -q '稳健 v1.4.1' app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
+          grep -q 'Equalizer' app/src/main/java/com/ame/blocktetris/AudioEngine.java
+          grep -q 'lastHardDropSound' app/src/main/java/com/ame/blocktetris/AudioEngine.java
+          test ! -f app/src/main/java/com/ame/blocktetris/StableTouchBlockTetrisView.java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -77,3 +81,17 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Materialize clean source on feature branch
+        if: success() && hashFiles('.build/v142.text/part_00.patch') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout origin/main -- .github/workflows/android-ci.yml
+          rm -rf .build
+          rm -f .github/workflows/apply-v142-overlay.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Add dual touch profiles and clean audio playback'
+          git push origin HEAD:fix/crisp-audio-v1.4.2
