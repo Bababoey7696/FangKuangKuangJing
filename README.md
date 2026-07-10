@@ -1,42 +1,48 @@
-# 方块矿境
+# 方块矿境 Block Mine
 
-一款采用原创像素矿物风格制作的 Android 下落方块游戏。
+原生 Android Java 下落方块游戏，采用 `View + Canvas` 绘制，完全离线、无广告、无联网权限。
 
-## 游戏功能
+## 当前稳定版本
 
-- 标准下落方块玩法
-- 左右移动与旋转
-- 加速下降和快速落地
-- 幽灵落点提示
-- 消行、计分和等级系统
-- 本地保存最高分
-- 暂停、继续和重新开始
-- 七种原创像素矿物材质
-- 完全离线
-- 无广告
-- 无联网权限
+- `versionName`: 1.4
+- `versionCode`: 7
+- 包名：`com.ame.blocktetris`
+- minSdk：21
+- targetSdk / compileSdk：35
+- Android Gradle Plugin：8.6.1
+- Gradle Wrapper：8.7
 
-## APK 下载
+## v1.4 核心内容
 
-请前往本仓库的 Releases 页面下载最新版 APK。
+- 手机平滑封顶速度：休闲 210ms/格、标准 165ms/格、极限 125ms/格。
+- 触底缓冲约 280–650ms，高分阶段仍可横移和旋转。
+- 三套技能配置、单局任务、9 套皮肤。
+- `GameBalance`、`RunMissions`、`ThemeCatalog` 分离平衡、任务和主题数据。
+- 支持从 0 分、历史最高分、最近一局或当前分数继续练习。
 
-## 操作方式
+## 构建
 
-- 左右按钮：移动方块
-- 旋转按钮：旋转方块
-- 向下按钮：加速下降
-- 快速落下按钮：立即落到底部
-- 暂停按钮：暂停或继续游戏
+1. 安装 Android Studio 和 Android SDK 35。
+2. 克隆仓库并打开根目录。
+3. 等待 Gradle 同步完成。
+4. 调试构建：`./gradlew assembleDebug`
+5. Release 构建：`./gradlew assembleRelease`
 
-## 源代码
+音频均由 `tools/generate_audio.py` 离线合成，仓库中已包含生成后的 WAV；需要重新生成时运行：
 
-完整 Android Studio 项目请下载仓库中的：
+```bash
+python3 tools/generate_audio.py
+```
 
-`FangKuangKuangJing-Source.zip`
+## 分支规则
 
-## 说明
+- `main`：可发布、可编译的稳定版本。
+- `develop`：下一版本集成分支。
+- `feature/*`：单项功能分支。
+- `fix/*`：问题修复分支。
 
-游戏使用原创 Canvas 像素材质，未使用 Minecraft、Mojang、
-Microsoft 或其他游戏的原始贴图、Logo、字体和音频资源。
+详细流程见 `docs/长期开发指南.md`，规划见 `docs/ROADMAP.md`。
 
-本项目与 Mojang Studios、Microsoft 和 The Tetris Company 无官方关联。
+## 安全
+
+仓库禁止提交 JKS、keystore、密码、`local.properties` 或私人 SDK 路径。正式签名密钥只离线保存。
