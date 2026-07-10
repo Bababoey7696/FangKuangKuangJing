@@ -27,7 +27,16 @@ jobs:
           if [ -d .build/v142.text ]; then
             cat .build/v142.text/part_00.patch .build/v142.text/part_01.patch .build/v142.text/part_02.patch > /tmp/v142.patch
             wc -c /tmp/v142.patch
-            patch --dry-run -p1 < /tmp/v142.patch
+            if ! patch --dry-run -p1 < /tmp/v142.patch > /tmp/patch.log 2>&1; then
+              cp /tmp/patch.log .build/v142_patch_error.txt
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git add .build/v142_patch_error.txt
+              git commit -m 'Record v1.4.2 patch diagnostic' || true
+              git push origin HEAD:fix/crisp-audio-v1.4.2 || true
+              cat /tmp/patch.log
+              exit 1
+            fi
             patch -p1 < /tmp/v142.patch
           fi
           grep -q 'versionCode 9' app/build.gradle
