@@ -46,3 +46,5 @@ python3 tools/generate_audio.py
 ## 安全
 
 仓库禁止提交 JKS、keystore、密码、`local.properties` 或私人 SDK 路径。正式签名密钥只离线保存。
+
+v1.4.2 新增可切换的 v1.2 经典触控与 v1.4.1 稳健触控；保留原有四首背景音乐，在播放端削弱高频底噪，并修复快速落地与锁定音叠加。
