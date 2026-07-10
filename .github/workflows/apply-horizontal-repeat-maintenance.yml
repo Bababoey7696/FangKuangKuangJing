@@ -1,22 +1,21 @@
 name: Apply horizontal repeat maintenance fix
 
 on:
-  pull_request:
+  push:
     branches: [ main ]
-    types: [ opened, synchronize, reopened ]
+    paths: [ '.github/workflows/apply-horizontal-repeat-maintenance.yml' ]
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.head_ref == 'fix/horizontal-repeat-guard'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout fix branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: fix/horizontal-repeat-guard
           fetch-depth: 0
 
       - name: Patch horizontal repeat timing
@@ -101,4 +100,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
           git commit -m 'Fix accidental double horizontal movement on short taps'
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:fix/horizontal-repeat-guard
