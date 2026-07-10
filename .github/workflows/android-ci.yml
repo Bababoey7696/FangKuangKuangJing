@@ -1,0 +1,63 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, develop, release-v1.4-source ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Reject signing secrets and machine paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name '*.jks' -o -name '*.keystore' -o -name 'keystore.properties' -o -name 'local.properties' \) | grep -q .; then
+            echo 'Signing secret or machine-specific file detected.'
+            exit 1
+          fi
+
+      - name: Verify Gradle Wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f gradlew
+          test -f gradlew.bat
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          grep -q 'gradle-8.7-bin.zip' gradle/wrapper/gradle-wrapper.properties
+          unzip -t gradle/wrapper/gradle-wrapper.jar >/dev/null
+
+      - name: Build debug and unsigned release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug assembleRelease
+
+      - name: Upload unsigned build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: block-mine-unsigned-apks
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
