@@ -1,0 +1,388 @@
+name: Publish clean v1.4 source branch
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout build materials
+        uses: actions/checkout@v4
+
+      - name: Reconstruct verified v1.4 project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf work
+          mkdir work
+          unzip -q FangKuangKuangJing-Source.zip -d work
+          PROJECT="$(find work -name settings.gradle -type f -printf '%h\n' | head -n1)"
+          test -n "$PROJECT"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+          base64 -d ci-v13/support.tar.gz.b64 | tar -xzf - -C "$PROJECT"
+          JAVA_DIR="$PROJECT/app/src/main/java/com/ame/blocktetris"
+          mkdir -p "$JAVA_DIR"
+          base64 -d ci-v13/BlockTetrisView.part00.gz.b64 | gzip -dc > "$JAVA_DIR/BlockTetrisView.java"
+          cat ci-v13/BlockTetrisView.part01 ci-v13/BlockTetrisView.part02 >> "$JAVA_DIR/BlockTetrisView.java"
+          base64 -d ci-v13/BlockTetrisView.rest.gz.b64 | gzip -dc >> "$JAVA_DIR/BlockTetrisView.java"
+
+          cat ci-v14/v14_code.part0 ci-v14/v14_code.part1 ci-v14/v14_code.part2 ci-v14/v14_code.part3 > /tmp/v14_code.b64
+          base64 -d /tmp/v14_code.b64 > /tmp/v14_code.tar.gz
+          echo '591b75f6d6a3ce93ff213b0c7b3a2fb6ccd01cd70ab9489a6b7d2119309c2abc  /tmp/v14_code.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v14_code.tar.gz -C "$PROJECT"
+          cp ci-v14/GameBalance.java "$JAVA_DIR/GameBalance.java"
+
+          echo 'fc7c3a368a42d1864f864261231c423d8b66d36d84a858ee45b6399dc00215cd  '"$JAVA_DIR/BlockTetrisView.java" | sha256sum -c -
+          grep -q "versionCode 7" "$PROJECT/app/build.gradle"
+          grep -q "versionName '1.4'" "$PROJECT/app/build.gradle"
+
+      - name: Add reproducible original-style audio generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROJECT/tools"
+          cat > "$PROJECT/tools/generate_audio.py" <<'PY'
+          #!/usr/bin/env python3
+          """Generate the offline original-style WAV assets used by Block Mine.
+
+          The sounds are synthesized from simple waveforms and do not depend on
+          third-party music, samples, fonts, or network services.
+          """
+          from pathlib import Path
+          import math
+          import random
+          import struct
+          import wave
+
+          ROOT = Path(__file__).resolve().parents[1]
+          RAW = ROOT / "app/src/main/res/raw"
+          MUSIC = ROOT / "app/src/main/assets/music"
+          RAW.mkdir(parents=True, exist_ok=True)
+          MUSIC.mkdir(parents=True, exist_ok=True)
+
+          def write_wav(path, samples, rate):
+              samples = [max(-32767, min(32767, int(v))) for v in samples]
+              with wave.open(str(path), "wb") as out:
+                  out.setnchannels(1)
+                  out.setsampwidth(2)
+                  out.setframerate(rate)
+                  out.writeframes(struct.pack("<%dh" % len(samples), *samples))
+
+          def envelope(t, duration, attack=0.01, release=0.08):
+              a = min(1.0, t / max(attack, 1e-4))
+              r = min(1.0, max(0.0, duration - t) / max(release, 1e-4))
+              return a * r
+
+          def tone(freq, duration, volume=0.2, rate=22050, sweep=0.0, square=False):
+              total = int(rate * duration)
+              phase = 0.0
+              result = []
+              for i in range(total):
+                  t = i / rate
+                  current = freq + sweep * (t / max(duration, 1e-6))
+                  phase += 2.0 * math.pi * current / rate
+                  wave_value = (1.0 if math.sin(phase) >= 0 else -1.0) if square else math.sin(phase)
+                  result.append(32767 * volume * envelope(t, duration) * wave_value)
+              return result
+
+          def sequence(notes, rate=22050, volume=0.18, square=False):
+              result = []
+              for freq, duration in notes:
+                  result.extend(tone(freq, duration, volume, rate, square=square))
+              return result
+
+          def mix(*tracks):
+              length = max(map(len, tracks))
+              out = [0.0] * length
+              for track in tracks:
+                  for i, value in enumerate(track):
+                      out[i] += value
+              return out
+
+          # Short effects.
+          effects = {
+              "sfx_move.wav": tone(400, 0.055, 0.16, square=True),
+              "sfx_rotate.wav": tone(610, 0.115, 0.14, sweep=170),
+              "sfx_soft_drop.wav": tone(210, 0.045, 0.13, sweep=-70),
+              "sfx_hard_drop.wav": mix(tone(95, 0.25, 0.22, sweep=-50), tone(55, 0.25, 0.12, square=True)),
+              "sfx_lock.wav": mix(tone(180, 0.15, 0.17, sweep=-80), tone(90, 0.15, 0.10, square=True)),
+              "sfx_line.wav": sequence([(520, .06), (660, .12)], volume=.15),
+              "sfx_multi_line.wav": sequence([(520, .07), (660, .07), (780, .12)], volume=.16),
+              "sfx_four_line.wav": sequence([(440, .07), (660, .07), (880, .20)], volume=.17),
+              "sfx_skill.wav": sequence([(520, .10), (780, .10), (1040, .20)], volume=.15),
+              "sfx_ready.wav": tone(900, .21, .22, sweep=130),
+              "sfx_egg.wav": sequence([(523, .13), (659, .13), (784, .27)], volume=.14),
+              "sfx_pause.wav": tone(290, .17, .13, sweep=-90),
+              "sfx_game_over.wav": sequence([(330, .16), (247, .16), (196, .16), (131, .22)], volume=.17),
+              "sfx_click.wav": tone(600, .045, .12, square=True),
+              "sfx_hold.wav": tone(500, .17, .14, sweep=180),
+          }
+          for name, samples in effects.items():
+              write_wav(RAW / name, samples, 22050)
+
+          NOTES = {
+              "C2": 65.41, "D2": 73.42, "E2": 82.41, "F2": 87.31, "G2": 98.00, "A2": 110.00,
+              "C3": 130.81, "D3": 146.83, "E3": 164.81, "F3": 174.61, "G3": 196.00,
+              "A3": 220.00, "B3": 246.94, "C4": 261.63, "D4": 293.66, "E4": 329.63,
+              "F4": 349.23, "G4": 392.00, "A4": 440.00, "B4": 493.88,
+          }
+
+          def music_track(path, bass_names, lead_names, seconds, pulse=0.5, seed=1):
+              rate = 11025
+              total = int(rate * seconds)
+              out = [0.0] * total
+              rng = random.Random(seed)
+              bass = [NOTES[n] for n in bass_names]
+              lead = [NOTES[n] for n in lead_names]
+              for i in range(total):
+                  t = i / rate
+                  beat = int(t / pulse)
+                  local = (t % pulse) / pulse
+                  b = bass[beat % len(bass)]
+                  l = lead[(beat // 2) % len(lead)]
+                  fade = min(1.0, t / .7, (seconds - t) / .7)
+                  gate = .45 + .55 * math.exp(-5.0 * local)
+                  bass_wave = math.sin(2 * math.pi * b * t) + .35 * math.sin(2 * math.pi * b * 2 * t)
+                  lead_wave = math.sin(2 * math.pi * l * t + .2 * math.sin(2 * math.pi * .25 * t))
+                  shimmer = math.sin(2 * math.pi * (l * 2) * t) * (.12 if beat % 4 == 0 else .04)
+                  noise = (rng.random() * 2 - 1) * .012
+                  out[i] = 32767 * fade * (0.12 * bass_wave + 0.10 * gate * lead_wave + shimmer + noise)
+              write_wav(MUSIC / path, out, rate)
+
+          music_track("bgm_ruins_echo.wav", ["A2", "E2", "G2", "D2"], ["E3", "A3", "G3", "D3"], 32, .50, 11)
+          music_track("bgm_crystal_pulse.wav", ["D2", "A2", "E2", "G2"], ["D4", "A3", "E4", "A4"], 24, .375, 22)
+          music_track("bgm_lava_depth.wav", ["A2", "F2", "G2", "E2"], ["A3", "C4", "D4", "E4"], 32, .50, 33)
+          music_track("bgm_sky_relic.wav", ["G2", "D3", "A2", "E3"], ["G4", "B4", "A4", "E4"], 24, .375, 44)
+          PY
+          chmod +x "$PROJECT/tools/generate_audio.py"
+          python3 "$PROJECT/tools/generate_audio.py"
+
+      - name: Add maintenance docs and CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$PROJECT/README.md" <<'EOF'
+          # 方块矿境 Block Mine
+
+          原生 Android Java 下落方块游戏，采用 `View + Canvas` 绘制，完全离线、无广告、无联网权限。
+
+          ## 当前稳定版本
+
+          - `versionName`: 1.4
+          - `versionCode`: 7
+          - 包名：`com.ame.blocktetris`
+          - minSdk：21
+          - targetSdk / compileSdk：35
+          - Android Gradle Plugin：8.6.1
+          - Gradle Wrapper：8.7
+
+          ## v1.4 核心内容
+
+          - 手机平滑封顶速度：休闲 210ms/格、标准 165ms/格、极限 125ms/格。
+          - 触底缓冲约 280–650ms，高分阶段仍可横移和旋转。
+          - 三套技能配置、单局任务、9 套皮肤。
+          - `GameBalance`、`RunMissions`、`ThemeCatalog` 分离平衡、任务和主题数据。
+          - 支持从 0 分、历史最高分、最近一局或当前分数继续练习。
+
+          ## 构建
+
+          1. 安装 Android Studio 和 Android SDK 35。
+          2. 克隆仓库并打开根目录。
+          3. 等待 Gradle 同步完成。
+          4. 调试构建：`./gradlew assembleDebug`
+          5. Release 构建：`./gradlew assembleRelease`
+
+          音频均由 `tools/generate_audio.py` 离线合成，仓库中已包含生成后的 WAV；需要重新生成时运行：
+
+          ```bash
+          python3 tools/generate_audio.py
+          ```
+
+          ## 分支规则
+
+          - `main`：可发布、可编译的稳定版本。
+          - `develop`：下一版本集成分支。
+          - `feature/*`：单项功能分支。
+          - `fix/*`：问题修复分支。
+
+          详细流程见 `docs/长期开发指南.md`，规划见 `docs/ROADMAP.md`。
+
+          ## 安全
+
+          仓库禁止提交 JKS、keystore、密码、`local.properties` 或私人 SDK 路径。正式签名密钥只离线保存。
+          EOF
+
+          mkdir -p "$PROJECT/docs" "$PROJECT/.github/workflows"
+          cat > "$PROJECT/docs/长期开发指南.md" <<'EOF'
+          # 方块矿境长期开发指南
+
+          ## 一、每次开发的固定流程
+
+          1. 从 `develop` 新建分支，例如 `feature/new-skill` 或 `fix/menu-layout`。
+          2. 一次分支只解决一类问题，避免速度、界面、存档同时大改。
+          3. 修改后至少执行 `./gradlew assembleDebug`。
+          4. 覆盖安装测试版，确认旧存档仍存在。
+          5. 提交 Pull Request 合并到 `develop`。
+          6. 准备发版时，把 `develop` 合并到 `main`，提升 `versionCode` 和 `versionName`。
+          7. 使用原长期 JKS 在本地签名 APK，并把 APK 作为 GitHub Release 附件发布。
+
+          ## 二、版本规则
+
+          - 小修复：1.4.1、1.4.2；每次仍必须增加 `versionCode`。
+          - 普通功能版本：1.5、1.6。
+          - 大规模架构或玩法变化：2.0。
+          - 不得重复使用已经发布过的 `versionCode`。
+
+          ## 三、代码结构方向
+
+          - `BlockTetrisView`：只负责绘制、输入和游戏状态协调。
+          - `GameBalance`：速度、落地缓冲、技能消耗和冷却。
+          - `RunMissions`：单局任务与奖励。
+          - `ThemeCatalog`：皮肤名称、配色和解锁条件。
+          - 下一阶段建议继续拆分 `BoardModel`、`PieceController`、`SaveRepository` 和 `GameRenderer`。
+
+          ## 四、测试重点
+
+          - 覆盖安装后 SharedPreferences 数据是否保留。
+          - 标准模式 20、30、40 级触控是否仍可操作。
+          - 暂停、切后台、冻结结束后是否瞬间锁死。
+          - 全面屏、小屏幕下按钮和文字是否越界。
+          - 任务奖励是否重复发放，续分开局是否错误完成任务。
+
+          ## 五、签名密钥
+
+          JKS 不进入 GitHub，也不发到公开聊天。至少保留两份离线备份，分别存放；同时离线记录别名、证书指纹和密码。
+          EOF
+
+          cat > "$PROJECT/docs/ROADMAP.md" <<'EOF'
+          # Roadmap
+
+          ## v1.5：可维护性与手感
+
+          - 将棋盘数据、方块控制、绘制和存档进一步拆分。
+          - 增加可选速度曲线：舒缓、标准、挑战。
+          - 增加按钮尺寸与位置自定义。
+          - 完成实体手机 20–50 级手感测试表。
+
+          ## v1.6：内容扩展
+
+          - 增加每日/每周离线挑战。
+          - 增加皮肤预览动画和更多材质。
+          - 增加技能升级或局外配置，但避免数值付费设计。
+
+          ## v2.0：架构升级
+
+          - 建立独立 `GameState` 与固定时间步循环。
+          - 增加单元测试和可回放输入日志。
+          - 评估 Java 继续维护或逐步迁移 Kotlin；不更换原生 Android 技术栈。
+          EOF
+
+          cat > "$PROJECT/CONTRIBUTING.md" <<'EOF'
+          # Contributing
+
+          - 从 `develop` 创建 `feature/*` 或 `fix/*` 分支。
+          - 提交信息使用清晰动词，例如 `Fix lock delay after resume`。
+          - Pull Request 必须写明：修改内容、存档影响、测试方式、截图或录屏。
+          - 禁止提交签名文件、密码、构建缓存和机器路径。
+          EOF
+
+          cat > "$PROJECT/SECURITY.md" <<'EOF'
+          # Security
+
+          本项目不需要网络权限。发现隐私、签名或存档安全问题时，请不要在公开 Issue 中粘贴密钥、密码或完整用户数据。
+
+          永远不要提交：`*.jks`、`*.keystore`、`keystore.properties`、真实 `local.properties`、签名密码。
+          EOF
+
+          cat > "$PROJECT/.github/workflows/android-ci.yml" <<'EOF'
+          name: Android CI
+
+          on:
+            push:
+              branches: [ main, develop ]
+            pull_request:
+              branches: [ main, develop ]
+
+          permissions:
+            contents: read
+
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              timeout-minutes: 20
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: '17'
+                - uses: android-actions/setup-android@v3
+                - name: Install Android SDK 35
+                  run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+                - name: Validate no signing secrets are committed
+                  run: |
+                    ! find . -type f \( -name '*.jks' -o -name '*.keystore' -o -name 'keystore.properties' -o -name 'local.properties' \) | grep .
+                - name: Build debug and release
+                  run: |
+                    chmod +x gradlew
+                    ./gradlew --no-daemon clean assembleDebug assembleRelease
+          EOF
+
+          mkdir -p "$PROJECT/releases/v1.4"
+          cat > "$PROJECT/releases/v1.4/README.md" <<'EOF'
+          # v1.4 手机平衡版
+
+          正式 APK 使用原长期 JKS 离线签名。为保护更新能力，JKS 和密码不存储在 GitHub。
+
+          正式 APK 文件名：`FangKuangKuangJing-v1.4-vc7-Official-Signed.apk`
+
+          SHA-256：
+
+          `4cca83a10ce55df1d39923d4804caff94d2c2e717a6657081fffa8bf9d8bfde5`
+
+          发布 APK 应作为 GitHub Release 的附件上传，不建议长期提交到 Git 历史中。
+          EOF
+
+          # Remove temporary and machine-specific files.
+          rm -f "$PROJECT/local.properties"
+          rm -rf "$PROJECT/.gradle" "$PROJECT/.idea" "$PROJECT/app/build" "$PROJECT/build"
+
+      - name: Validate clean source builds
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          cd "$PROJECT"
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug assembleRelease
+
+      - name: Push clean source branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B release-v1.4-source
+          git add .
+          git commit -m "Publish 方块矿境 v1.4 clean Android Studio source"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin release-v1.4-source
