@@ -1,16 +1,15 @@
 name: Apply v1.4.2 audio and touch maintenance
 
 on:
-  pull_request_target:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
+  issue_comment:
+    types: [ created ]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.pull_request.head.ref == 'fix/crisp-audio-v1.4.2'
+    if: github.event.issue.pull_request && github.event.issue.number == 6 && github.event.comment.body == '/apply-v142'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout v1.4.2 feature branch
