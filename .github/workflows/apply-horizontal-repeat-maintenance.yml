@@ -1,0 +1,104 @@
+name: Apply horizontal repeat maintenance fix
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/horizontal-repeat-guard'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Patch horizontal repeat timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/com/ame/blocktetris/BlockTetrisView.java')
+          text = path.read_text(encoding='utf-8')
+          old = '''    private void beginRepeat(int control){
+        activeControl=control;
+        long now=SystemClock.uptimeMillis();
+        repeatAt=now+repeatDelay();
+    }
+
+    private long repeatDelay(){
+        return sensitivity==SENS_LOW?235L:(sensitivity==SENS_HIGH?125L:175L);
+    }
+
+    private long repeatInterval(){
+        return sensitivity==SENS_LOW?112L:(sensitivity==SENS_HIGH?54L:80L);
+    }
+
+    private void updateHeldControl(long now){
+        if(activeControl==CONTROL_NONE||activeControl==CONTROL_DROP||!canOperate())return;
+        if(now<repeatAt)return;
+        if(activeControl==CONTROL_LEFT)move(-1,true);
+        else if(activeControl==CONTROL_RIGHT)move(1,true);
+        else if(activeControl==CONTROL_DOWN)stepDown(true);
+        repeatAt=now+repeatInterval();
+    }
+'''
+          new = '''    private void beginRepeat(int control){
+        activeControl=control;
+        long now=SystemClock.uptimeMillis();
+        repeatAt=now+repeatDelay(control);
+    }
+
+    /**
+     * A tap moves exactly one cell. Horizontal auto-repeat starts only after a
+     * deliberate hold, while soft-drop keeps its faster original response.
+     */
+    private long repeatDelay(int control){
+        if(control==CONTROL_DOWN){
+            return sensitivity==SENS_LOW?235L:(sensitivity==SENS_HIGH?125L:175L);
+        }
+        return sensitivity==SENS_LOW?380L:(sensitivity==SENS_HIGH?260L:320L);
+    }
+
+    private long repeatInterval(int control){
+        if(control==CONTROL_DOWN){
+            return sensitivity==SENS_LOW?112L:(sensitivity==SENS_HIGH?54L:80L);
+        }
+        return sensitivity==SENS_LOW?120L:(sensitivity==SENS_HIGH?72L:94L);
+    }
+
+    private void updateHeldControl(long now){
+        if(activeControl==CONTROL_NONE||activeControl==CONTROL_DROP||!canOperate())return;
+        if(now<repeatAt)return;
+        if(activeControl==CONTROL_LEFT)move(-1,true);
+        else if(activeControl==CONTROL_RIGHT)move(1,true);
+        else if(activeControl==CONTROL_DOWN)stepDown(true);
+        repeatAt=now+repeatInterval(activeControl);
+    }
+'''
+          if old in text:
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          elif 'repeatAt=now+repeatDelay(control);' not in text:
+              raise SystemExit('Expected repeat-control block was not found.')
+          PY
+
+      - name: Commit patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'Source already patched.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/ame/blocktetris/BlockTetrisView.java
+          git commit -m 'Fix accidental double horizontal movement on short taps'
+          git push origin HEAD:${{ github.head_ref }}
