@@ -1,16 +1,16 @@
 name: Apply horizontal repeat maintenance fix
 
 on:
-  pull_request_target:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
+  issue_comment:
+    types: [ created ]
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   patch:
-    if: github.event.pull_request.head.ref == 'fix/horizontal-repeat-guard'
+    if: github.event.issue.pull_request && github.event.issue.number == 5 && github.event.comment.body == '/apply-input-fix'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted fix branch
